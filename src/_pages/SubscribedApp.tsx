@@ -41,7 +41,9 @@ interface SubscribedAppProps {
 }
 
 type View = "queue" | "solutions" | "debug"
-type ChatMessage = { userId: string; message: string; ts: number; type: "chat" | "system" }
+type ChatMessage =
+  | { userId: string; message: string; ts: number; type: "chat" | "system" }
+  | { userId: string; image: string; ts: number; type: "image" }
 
 const SubscribedApp: React.FC<SubscribedAppProps> = ({
   credits,
@@ -112,6 +114,9 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
         if (payload.type === "system") {
           setMessages((prev) => [...prev, { ...payload, ts: Date.now() }])
         }
+        if (payload.type === "image") {
+          setMessages((prev) => [...prev, payload])
+        }
       }
       socket.onclose = () => {
         setRoomCode(null)
@@ -133,6 +138,98 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
     if (!message || !ws || ws.readyState !== WebSocket.OPEN || !roomCode) return
     ws.send(JSON.stringify({ type: "chat", code: roomCode, userId, message }))
     setPendingMessage("")
+  }
+
+  const captureAndSendImage = async () => {
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) {
+        console.warn("captureAndSendImage: not connected or no room")
+        return
+      }
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false
+      })
+      const track = stream.getVideoTracks()[0]
+      const video = document.createElement("video")
+      video.srcObject = stream
+      await new Promise<void>((resolve) => {
+        video.onloadedmetadata = () => resolve()
+      })
+      await video.play()
+      const canvas = document.createElement("canvas")
+      canvas.width = video.videoWidth || 1280
+      canvas.height = video.videoHeight || 720
+      const ctx = canvas.getContext("2d")
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const dataUrl = canvas.toDataURL("image/png")
+      stream.getTracks().forEach((t) => t.stop())
+      ws.send(
+        JSON.stringify({
+          type: "image",
+          code: roomCode,
+          userId,
+          image: dataUrl,
+          ts: Date.now()
+        })
+      )
+      setMessages((prev) => [
+        ...prev,
+        { type: "image", userId, image: dataUrl, ts: Date.now() }
+      ])
+    } catch (error) {
+      console.error("Failed to capture/send image:", error)
+      showToast("Error", "Screen capture failed. Allow screen share and try again.", "error")
+    }
+  }
+
+  // Send the most recent Electron screenshot (Ctrl+H) if available
+  const sendLastElectronScreenshot = async () => {
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN || !roomCode) {
+        showToast("Error", "Join a room before sending a screenshot", "error")
+        return
+      }
+      const api = (window as any).electronAPI
+      if (!api?.getScreenshots) {
+        showToast("Error", "Screenshot bridge unavailable", "error")
+        return
+      }
+      const res = await api.getScreenshots()
+      const previews = Array.isArray(res) ? res : Array.isArray(res?.previews) ? res.previews : []
+      if (!previews.length) {
+        showToast("Error", "No screenshots found. Take one with Ctrl+H first.", "error")
+        return
+      }
+      const latest = previews[previews.length - 1]
+      const dataUrl = latest.preview?.startsWith("data:")
+        ? latest.preview
+        : `data:image/png;base64,${latest.preview || ""}`
+      ws.send(
+        JSON.stringify({
+          type: "image",
+          code: roomCode,
+          userId,
+          image: dataUrl,
+          ts: Date.now()
+        })
+      )
+      setMessages((prev) => [
+        ...prev,
+        { type: "image", userId, image: dataUrl, ts: Date.now() }
+      ])
+      // Clear the last screenshot from the queue so it won't resend
+      if (api?.deleteLastScreenshot) {
+        try {
+          await api.deleteLastScreenshot()
+        } catch (err) {
+          console.warn("Failed to clear screenshot after send:", err)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to send last screenshot:", error)
+      showToast("Error", "Failed to send screenshot", "error")
+    }
   }
 
   // Let's ensure we reset queries etc. if some electron signals happen
@@ -248,6 +345,21 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
     return () => cleanupFunctions.forEach((fn) => fn())
   }, [view])
 
+  // Global hotkey: Ctrl/Cmd + * to capture and send screenshot to room
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isTrigger =
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === "*" || (e.key === "8" && e.shiftKey))
+      if (isTrigger) {
+        e.preventDefault()
+        captureAndSendImage()
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [captureAndSendImage])
+
   return (
     <div ref={containerRef} className="min-h-0">
       {/* Join Room */}
@@ -279,7 +391,20 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
                   className={m.type === "system" ? "text-white/60" : "text-white"}
                   style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace" }}
                 >
-                  {m.type === "chat" ? `${m.userId.slice(0, 4)}: ${m.message}` : m.message}
+                  {m.type === "chat"
+                    ? `${m.userId.slice(0, 4)}: ${m.message}`
+                    : m.type === "image"
+                    ? (
+                      <>
+                        {`${m.userId.slice(0, 4)}: `}
+                        <img
+                          src={m.image}
+                          alt="shared screenshot"
+                          className="mt-1 max-w-full rounded border border-white/10"
+                        />
+                      </>
+                    )
+                    : m.message}
                 </div>
               ))}
             </div>
@@ -301,6 +426,13 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
                 className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1 rounded"
               >
                 Send
+              </button>
+              <button
+                onClick={sendLastElectronScreenshot}
+                className="bg-white/10 hover:bg-white/20 text-white text-sm px-3 py-1 rounded"
+                title="Send last Ctrl+H screenshot"
+              >
+                Send Ctrl+H
               </button>
             </div>
           </div>

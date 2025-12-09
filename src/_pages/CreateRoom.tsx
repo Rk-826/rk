@@ -105,7 +105,10 @@ export function CreateRoom() {
         if (payload.type === "history" && Array.isArray(payload.messages)) {
           setMessages(payload.messages)
         }
-        if (payload.type === "chat" || payload.type === "system") {
+        if (payload.type === "chat" || payload.type === "system" || payload.type === "image") {
+          if (payload.type === "image") {
+            console.log("Received image payload", payload)
+          }
           setMessages((prev) => [...prev, payload])
         }
       }
@@ -160,14 +163,31 @@ export function CreateRoom() {
           {joinError && <div className="text-xs text-red-300">{joinError}</div>}
           {messages.length > 0 && (
             <div className="space-y-2">
-              <div className="max-h-40 overflow-y-auto text-xs bg-black/30 border border-white/5 rounded p-2">
+              <div className="max-h-96 overflow-y-auto text-xs bg-black/30 border border-white/5 rounded p-2 space-y-2">
                 {messages.map((m, idx) => (
                   <div
                     key={idx}
                     className={m.type === "system" ? "text-white/60" : "text-white"}
                     style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace" }}
                   >
-                    {m.type === "chat" ? `${m.userId?.slice(0, 4) || "user"}: ${m.message}` : m.message}
+                    {m.type === "chat"
+                      ? `${m.userId?.slice(0, 4) || "user"}: ${m.message}`
+                      : m.type === "image"
+                      ? (
+                        <div className="space-y-1">
+                          <div>{`${m.userId?.slice(0, 4) || "user"}: [screenshot]`}</div>
+                          <img
+                            src={
+                              m.image?.startsWith("data:")
+                                ? m.image
+                                : `data:image/png;base64,${m.image ?? ""}`
+                            }
+                            alt="shared screenshot"
+                            className="max-w-full rounded border border-white/10 bg-black/40"
+                          />
+                        </div>
+                      )
+                      : m.message}
                   </div>
                 ))}
               </div>

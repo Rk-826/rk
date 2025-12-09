@@ -97,6 +97,18 @@ wss.on("connection", (ws, request, roomCode, userId) => {
         room.messages.push(msg)
         console.log(`[${roomCode}] ${userId.slice(0, 4)}: ${msg.message}`)
         broadcast(room, msg)
+      } else if (payload.type === "image" && payload.image) {
+        room.lastActive = Date.now()
+        const msg = {
+          type: "image",
+          code: roomCode,
+          userId,
+          image: payload.image,
+          ts: Date.now()
+        }
+        room.messages.push(msg)
+        console.log(`[${roomCode}] ${userId.slice(0, 4)}: [image]`)
+        broadcast(room, msg)
       }
     } catch (e) {
       // ignore malformed
