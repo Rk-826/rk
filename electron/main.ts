@@ -7,6 +7,7 @@ import { ScreenshotHelper } from "./ScreenshotHelper"
 import { ShortcutsHelper } from "./shortcuts"
 import { initAutoUpdater } from "./autoUpdater"
 import { configHelper } from "./ConfigHelper"
+import { roomService } from "./RoomService"
 import * as dotenv from "dotenv"
 
 // Constants
@@ -254,9 +255,11 @@ async function createWindow(): Promise<void> {
         // In development, retry loading after a short delay
         console.log("Retrying to load development server...")
         setTimeout(() => {
-          state.mainWindow?.loadURL("http://localhost:54321").catch((error) => {
-            console.error("Failed to load dev server on retry:", error)
-          })
+          state.mainWindow
+            ?.loadURL("http://localhost:3000")
+            .catch((error) => {
+              console.error("Failed to load dev server on retry:", error)
+            })
         }, 1000)
       }
     }
@@ -264,8 +267,8 @@ async function createWindow(): Promise<void> {
 
   if (isDev) {
     // In development, load from the dev server
-    console.log("Loading from development server: http://localhost:54321")
-    state.mainWindow.loadURL("http://localhost:54321").catch((error) => {
+    console.log("Loading from development server: http://localhost:3000")
+    state.mainWindow.loadURL("http://localhost:3000").catch((error) => {
       console.error("Failed to load dev server, falling back to local file:", error)
       // Fallback to local file if dev server is not available
       const indexPath = path.join(__dirname, "../dist/index.html")
@@ -526,6 +529,13 @@ async function initializeApp() {
     app.setPath('cache', cachePath)
       
     loadEnvVariables()
+    
+    // Force OpenRouter configuration
+    const { forceOpenRouterConfig } = await import("./ForceOpenRouterConfig");
+    forceOpenRouterConfig();
+
+    // Start room service (websocket server) early so port is ready
+    roomService.start()
     
     // Ensure a configuration file exists
     if (!configHelper.hasApiKey()) {

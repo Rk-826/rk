@@ -8,6 +8,8 @@ import { app, BrowserWindow, dialog } from "electron"
 import { OpenAI } from "openai"
 import { configHelper } from "./ConfigHelper"
 import Anthropic from '@anthropic-ai/sdk';
+import { rateLimiter } from "./RateLimiter";
+import { geminiApiHelper } from "./GeminiApiHelper";
 
 // Interface for Gemini API requests
 interface GeminiMessage {
@@ -73,22 +75,34 @@ export class ProcessingHelper {
   private initializeAIClient(): void {
     try {
       const config = configHelper.loadConfig();
+      console.log("=== AI CLIENT INITIALIZATION ===");
+      console.log("API Provider:", config.apiProvider);
+      console.log("API Key:", config.apiKey ? `${config.apiKey.substring(0, 10)}...` : "NOT SET");
+      console.log("Extraction Model:", config.extractionModel);
+      console.log("Solution Model:", config.solutionModel);
+      console.log("Debugging Model:", config.debuggingModel);
+      console.log("=================================");
       
       if (config.apiProvider === "openai") {
         if (config.apiKey) {
           this.openaiClient = new OpenAI({ 
+            baseURL: 'https://openrouter.ai/api/v1',
             apiKey: config.apiKey,
             timeout: 60000, // 60 second timeout
-            maxRetries: 2   // Retry up to 2 times
+            maxRetries: 2,   // Retry up to 2 times
+            defaultHeaders: {
+              'HTTP-Referer': 'https://your-app.com', // Optional. Site URL for rankings on openrouter.ai.
+              'X-Title': 'Coding Assistant App', // Optional. Site title for rankings on openrouter.ai.
+            }
           });
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.log("OpenAI client initialized successfully");
+          console.log("OpenRouter client initialized successfully");
         } else {
           this.openaiClient = null;
           this.geminiApiKey = null;
           this.anthropicClient = null;
-          console.warn("No API key available, OpenAI client not initialized");
+          console.warn("No API key available, OpenRouter client not initialized");
         }
       } else if (config.apiProvider === "gemini"){
         // Gemini client initialization
@@ -496,7 +510,7 @@ export class ProcessingHelper {
 
         // Send to OpenAI Vision API
         const extractionResponse = await this.openaiClient.chat.completions.create({
-          model: config.extractionModel || "gpt-4o",
+          model: config.extractionModel || "openai/gpt-4o",
           messages: messages,
           max_tokens: 4000,
           temperature: 0.2
@@ -516,6 +530,10 @@ export class ProcessingHelper {
           };
         }
       } else if (config.apiProvider === "gemini")  {
+        console.log("⚠️  WARNING: Using Gemini API instead of OpenRouter!");
+        console.log("Current config provider:", config.apiProvider);
+        console.log("This should be 'openai' for OpenRouter usage");
+        
         // Use Gemini API
         if (!this.geminiApiKey) {
           return {
@@ -543,17 +561,20 @@ export class ProcessingHelper {
             }
           ];
 
-          // Make API request to Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
+          // Make API request to Gemini with rate limiting
+          const response = await rateLimiter.executeRequest(
+            () => axios.default.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${config.extractionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+              {
+                contents: geminiMessages,
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 4000
+                }
+              },
+              { signal }
+            ),
+            "Gemini API - Problem Extraction"
           );
 
           const responseData = response.data as GeminiResponse;
@@ -569,9 +590,10 @@ export class ProcessingHelper {
           problemInfo = JSON.parse(jsonText);
         } catch (error) {
           console.error("Error using Gemini API:", error);
+          const errorMessage = geminiApiHelper.getErrorMessage(error);
           return {
             success: false,
-            error: "Failed to process with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {
@@ -775,7 +797,7 @@ Your solution should be efficient, well-commented, and handle edge cases.
         
         // Send to OpenAI API
         const solutionResponse = await this.openaiClient.chat.completions.create({
-          model: config.solutionModel || "gpt-4o",
+          model: config.solutionModel || "openai/gpt-4o",
           messages: [
             { role: "system", content: "You are an expert coding interview assistant. Provide clear, optimal solutions with detailed explanations." },
             { role: "user", content: promptText }
@@ -807,17 +829,20 @@ Your solution should be efficient, well-commented, and handle edge cases.
             }
           ];
 
-          // Make API request to Gemini
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
+          // Make API request to Gemini with rate limiting
+          const response = await rateLimiter.executeRequest(
+            () => axios.default.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${config.solutionModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+              {
+                contents: geminiMessages,
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 4000
+                }
+              },
+              { signal }
+            ),
+            "Gemini API - Solution Generation"
           );
 
           const responseData = response.data as GeminiResponse;
@@ -829,9 +854,10 @@ Your solution should be efficient, well-commented, and handle edge cases.
           responseContent = responseData.candidates[0].content.parts[0].text;
         } catch (error) {
           console.error("Error using Gemini API for solution:", error);
+          const errorMessage = geminiApiHelper.getErrorMessage(error);
           return {
             success: false,
-            error: "Failed to generate solution with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {
@@ -1067,7 +1093,7 @@ If you include code examples, use proper markdown code blocks with language spec
         }
 
         const debugResponse = await this.openaiClient.chat.completions.create({
-          model: config.debuggingModel || "gpt-4o",
+          model: config.debuggingModel || "openai/gpt-4o",
           messages: messages,
           max_tokens: 4000,
           temperature: 0.2
@@ -1129,16 +1155,19 @@ If you include code examples, use proper markdown code blocks with language spec
             });
           }
 
-          const response = await axios.default.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
-            {
-              contents: geminiMessages,
-              generationConfig: {
-                temperature: 0.2,
-                maxOutputTokens: 4000
-              }
-            },
-            { signal }
+          const response = await rateLimiter.executeRequest(
+            () => axios.default.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${config.debuggingModel || "gemini-2.0-flash"}:generateContent?key=${this.geminiApiKey}`,
+              {
+                contents: geminiMessages,
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 4000
+                }
+              },
+              { signal }
+            ),
+            "Gemini API - Debug Analysis"
           );
 
           const responseData = response.data as GeminiResponse;
@@ -1150,9 +1179,10 @@ If you include code examples, use proper markdown code blocks with language spec
           debugContent = responseData.candidates[0].content.parts[0].text;
         } catch (error) {
           console.error("Error using Gemini API for debugging:", error);
+          const errorMessage = geminiApiHelper.getErrorMessage(error);
           return {
             success: false,
-            error: "Failed to process debug request with Gemini API. Please check your API key or try again later."
+            error: errorMessage
           };
         }
       } else if (config.apiProvider === "anthropic") {

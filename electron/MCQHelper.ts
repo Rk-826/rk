@@ -1,37 +1,135 @@
 // MCQHelper.ts - Handles MCQ detection and answer overlay
 import { BrowserWindow, screen } from "electron"
-import * as axios from "axios"
 import { ScreenshotHelper } from "./ScreenshotHelper"
 import { configHelper } from "./ConfigHelper"
-
-interface GeminiMessage {
-  role: string;
-  parts: Array<{
-    text?: string;
-    inlineData?: {
-      mimeType: string;
-      data: string;
-    }
-  }>;
-}
-
-interface GeminiResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text: string;
-      }>;
-    };
-    finishReason: string;
-  }>;
-}
+import { OpenAI } from "openai"
 
 export class MCQHelper {
   private overlayWindow: BrowserWindow | null = null;
+  private isOverlayHidden: boolean = false;
   private screenshotHelper: ScreenshotHelper;
 
   constructor(screenshotHelper: ScreenshotHelper) {
     this.screenshotHelper = screenshotHelper;
+  }
+
+  /**
+   * Ensure popup (overlayWindow) exists and is loaded once
+   */
+  private async ensurePopup(): Promise<void> {
+    if (this.overlayWindow && !this.overlayWindow.isDestroyed()) return;
+
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: _screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+    const overlayX = 20;
+    const overlayY = screenHeight - 70;
+
+    this.overlayWindow = new BrowserWindow({
+      width: 140,
+      height: 56,
+      x: overlayX,
+      y: overlayY,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      focusable: false,
+      resizable: false,
+      movable: false,
+      show: false,
+      hasShadow: false,
+      backgroundColor: "#00000000",
+      type: "toolbar",
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        backgroundThrottling: true,
+        webSecurity: true
+      }
+    });
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+      html,body{margin:0;padding:0;background:transparent;height:100%;}
+      .wrap{display:flex;align-items:center;justify-content:center;height:100%}
+      .answer{background:rgba(0,0,0,.75);color:#00ff88;font:600 16px/1.2 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,.2);min-width:64px;text-align:center}
+    </style></head><body>
+      <div class="wrap"><div id="answer" class="answer">--</div></div>
+      <script>
+        window.__setAnswer = (text) => {
+          const el = document.getElementById('answer');
+          if (el) el.textContent = (text || '--').toLowerCase();
+        }
+      </script>
+    </body></html>`;
+
+    await this.overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    this.overlayWindow.setAlwaysOnTop(true, "screen-saver");
+    // Start fully hidden and non-interactive
+    this.overlayWindow.setIgnoreMouseEvents(true);
+    this.overlayWindow.setOpacity(0);
+    this.overlayWindow.setVisibleOnAllWorkspaces(false);
+    this.isOverlayHidden = true;
+  }
+
+  /** Toggle popup visibility (Ctrl+/) */
+  public async togglePopup(): Promise<void> {
+    await this.ensurePopup();
+    if (!this.overlayWindow) return;
+
+    if (this.isOverlayHidden) {
+      await this.showPopup();
+    } else {
+      await this.hidePopup();
+    }
+  }
+
+  private async showPopup(): Promise<void> {
+    if (!this.overlayWindow) return;
+    // visible + interactive + kept transparent window
+    this.overlayWindow.setContentProtection(true); // prevent screen recording capture
+    this.overlayWindow.setIgnoreMouseEvents(false);
+    this.overlayWindow.setOpacity(1);
+    this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.overlayWindow.showInactive();
+    this.isOverlayHidden = false;
+  }
+
+  private async hidePopup(): Promise<void> {
+    if (!this.overlayWindow) return;
+    // completely invisible + non-interactive + not captured
+    this.overlayWindow.setContentProtection(true); // enforce protection while hidden
+    this.overlayWindow.setIgnoreMouseEvents(true);
+    this.overlayWindow.setOpacity(0);
+    this.overlayWindow.setVisibleOnAllWorkspaces(false);
+    this.overlayWindow.hide();
+    this.isOverlayHidden = true;
+  }
+
+  /** Update answer inside popup (Ctrl+.) */
+  public async showAnswerInPopup(answer: string): Promise<void> {
+    await this.ensurePopup();
+    if (!this.overlayWindow) return;
+
+    if (this.isOverlayHidden) await this.showPopup();
+    const text = (answer || "").toLowerCase();
+    await this.overlayWindow.webContents.executeJavaScript(`window.__setAnswer(${JSON.stringify(text)})`);
+
+    // Auto-hide quickly like the screenshot HUD (brief on-screen flash)
+    clearTimeout((this as any).__autoHideTimer);
+    (this as any).__autoHideTimer = setTimeout(() => {
+      this.hidePopup().catch(() => {});
+    }, 900);
+  }
+
+  /** Update silently without showing (like Ctrl+B behaviour) */
+  private async setAnswerSilently(answer: string): Promise<void> {
+    await this.ensurePopup();
+    if (!this.overlayWindow) return;
+    // enforce hidden state
+    await this.hidePopup();
+    const text = (answer || "").toLowerCase();
+    await this.overlayWindow.webContents.executeJavaScript(`window.__setAnswer(${JSON.stringify(text)})`);
   }
 
   /**
@@ -64,7 +162,8 @@ export class MCQHelper {
         answer = "N";
       }
 
-      await this.showAnswerOverlay(answer);
+      // Update the popup silently (mimic Ctrl+B behavior: compute while hidden)
+      await this.setAnswerSilently(answer);
 
       if (wasMainWindowVisible && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
@@ -88,6 +187,16 @@ export class MCQHelper {
         return null;
       }
 
+      // Initialize OpenRouter client
+      const openai = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: config.apiKey,
+        defaultHeaders: {
+          'HTTP-Referer': 'https://your-app.com',
+          'X-Title': 'Coding Assistant App',
+        }
+      });
+
       const fs = require('fs');
       const screenshotData = fs.readFileSync(screenshotPath).toString('base64');
 
@@ -101,153 +210,97 @@ From the screenshot:
 4. Respond in the format:
 QUESTION: <question text>
 OPTIONS:
-a) ...
-b) ...
-c) ...
-d) ...
+a) <option text>
+b) <option text>
+c) <option text>
+d) <option text>
 ANSWER: <answer letter/number>
 
 If no MCQ is found, respond only with "NO_MCQ".
 Do NOT include more than one MCQ in your response.
 `;
 
-      const geminiMessages: GeminiMessage[] = [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: "image/png",
-                data: screenshotData
+      const response = await openai.chat.completions.create({
+        model: "openai/gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,${screenshotData}`
+                }
               }
-            }
-          ]
-        }
-      ];
-
-      const response = await axios.default.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.apiKey}`,
-        {
-          contents: geminiMessages,
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 200
+            ]
           }
-        }
-      );
+        ],
+        max_tokens: 200,
+        temperature: 0.1
+      });
 
-      const responseData = response.data as GeminiResponse;
-      if (!responseData.candidates || responseData.candidates.length === 0) {
-        console.error("Empty response from Gemini API");
-        return null;
-      }
-
-      const responseText = responseData.candidates[0].content.parts[0].text.trim();
-      console.log("Gemini full response:\n", responseText);
+      const responseText = response.choices[0].message.content?.trim() || "";
+      console.log("OpenRouter full response:\n", responseText);
 
       if (responseText === "NO_MCQ") {
         return null;
       }
 
+      // Extract the answer letter
       const answerMatch = responseText.match(/ANSWER:\s*([A-Da-d1-4])/);
-      return answerMatch ? answerMatch[1].toLowerCase() : null;
+      if (answerMatch) {
+        const answerLetter = answerMatch[1].toLowerCase();
+        
+        // Extract the option text for the correct answer
+        const optionPattern = new RegExp(`${answerLetter}\\)\\s*([^\\n]+)`, 'i');
+        const optionMatch = responseText.match(optionPattern);
+        
+        if (optionMatch) {
+          const optionText = optionMatch[1].trim();
+          // Return the answer letter and first 2-3 letters of the option
+          const shortText = optionText.substring(0, 3).toLowerCase();
+          return `${answerLetter}) ${shortText}`;
+        }
+        
+        return answerLetter;
+      }
+      
+      return null;
 
     } catch (error) {
       console.error("Error analyzing MCQ:", error);
+      console.error("OpenRouter API error:", error);
       return null;
     }
   }
 
+  // Deprecated overlay path retained for compatibility (not used)
+  private async showAnswerOverlay(_answer: string): Promise<void> {}
+
   /**
-   * Show answer overlay at bottom-left corner with white background and black text
+   * Write answer to a temporary file for easy access
    */
-  private async showAnswerOverlay(answer: string): Promise<void> {
+  private writeAnswerToFile(answer: string): void {
     try {
-      this.hideOverlay();
-
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
-      // Position overlay at bottom-left
-      const overlayX = 20;
-      const overlayY = screenHeight - 70; // Bottom offset
-
-      this.overlayWindow = new BrowserWindow({
-        width: 100,
-        height: 50,
-        x: overlayX,
-        y: overlayY,
-        frame: false,
-        transparent: true,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        focusable: false,
-        resizable: false,
-        movable: false,
-        show: false,
-        hasShadow: false,
-        opacity: 1.0,
-        backgroundColor: "#00FFFFFF",
-        type: "panel",
-        paintWhenInitiallyHidden: true,
-        titleBarStyle: "hidden",
-        enableLargerThanScreen: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          scrollBounce: true,
-          backgroundThrottling: false
-        }
-      });
-
-      this.overlayWindow.setContentProtection(true);
-      this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-      this.overlayWindow.setAlwaysOnTop(true, "screen-saver", 1);
-
-      const overlayHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      user-select: none;
-    }
-    .answer {
-      background: white;
-      color: black;
-      font-size: 20px;
-      font-weight: bold;
-      padding: 6px 10px;
-      border-radius: 6px;
-      pointer-events: none;
-      border: 1px solid #ccc;
-    }
-  </style>
-</head>
-<body>
-  <div class="answer">${answer.toUpperCase()}</div>
-</body>
-</html>
-`;
-      await this.overlayWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(overlayHTML)}`);
-
-      this.overlayWindow.showInactive();
-      setTimeout(() => {
-        this.hideOverlay();
-      }, 300);
-
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      
+      const tempDir = os.tmpdir();
+      const answerFile = path.join(tempDir, 'mcq_answer.txt');
+      
+      const content = `MCQ ANSWER: ${answer.toUpperCase()}\nTimestamp: ${new Date().toLocaleTimeString()}`;
+      fs.writeFileSync(answerFile, content);
+      
+      console.log(`📝 Answer written to: ${answerFile}`);
     } catch (error) {
-      console.error("Error showing answer overlay:", error);
+      console.error("Failed to write answer to file:", error);
     }
   }
+
+  // Removed Notification path per requirement
+  private showNotificationFallback(_answer: string): void {}
 
   public hideOverlay(): void {
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
@@ -257,11 +310,16 @@ Do NOT include more than one MCQ in your response.
   }
 
   private getMainWindow(): BrowserWindow | null {
-    const allWindows = BrowserWindow.getAllWindows();
-    return allWindows.find(window => 
-      !window.isDestroyed() && 
-      (window.webContents.getURL().includes('localhost') || window.webContents.getURL().includes('file:'))
-    ) || null;
+    try {
+      const allWindows = BrowserWindow.getAllWindows();
+      return allWindows.find(window => 
+        !window.isDestroyed() && 
+        (window.webContents.getURL().includes('localhost') || window.webContents.getURL().includes('file:'))
+      ) || null;
+    } catch (error) {
+      console.warn("Error getting main window:", error);
+      return null;
+    }
   }
 
   public cleanup(): void {

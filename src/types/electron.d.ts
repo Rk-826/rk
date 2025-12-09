@@ -61,6 +61,11 @@ export interface ElectronAPI {
   openLink: (url: string) => void
   onApiKeyInvalid: (callback: () => void) => () => void
   removeListener: (eventName: string, callback: (...args: any[]) => void) => void
+
+  // Room management
+  createRoom: () => Promise<{ code: string }>
+  validateRoom: (code: string) => Promise<{ valid: boolean }>
+  getRoomServerInfo: () => Promise<{ port: number }>
 }
 
 declare global {

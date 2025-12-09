@@ -236,7 +236,12 @@ const electronAPI = {
       ipcRenderer.removeListener("delete-last-screenshot", subscription)
     }
   },
-  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot")
+  deleteLastScreenshot: () => ipcRenderer.invoke("delete-last-screenshot"),
+
+  // Room API
+  createRoom: () => ipcRenderer.invoke("room-create"),
+  validateRoom: (code: string) => ipcRenderer.invoke("room-validate", code),
+  getRoomServerInfo: () => ipcRenderer.invoke("room-server-info")
 }
 
 // Before exposing the API

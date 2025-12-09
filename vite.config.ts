@@ -39,7 +39,7 @@ export default defineConfig({
   ],
   base: process.env.NODE_ENV === "production" ? "./" : "/",
   server: {
-    port: 54321,
+    port: 3000,
     strictPort: true,
     watch: {
       usePolling: true

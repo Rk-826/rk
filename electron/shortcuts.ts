@@ -166,9 +166,9 @@ export class ShortcutsHelper {
       }
     })
 
-    // MCQ capture and answer shortcut
-    globalShortcut.register("A", async () => {
-      console.log("Command/Ctrl + M pressed. Capturing MCQ and analyzing...")
+    // Ctrl + . => capture and show answer inside popup
+    globalShortcut.register("CommandOrControl+.", async () => {
+      console.log("Ctrl+. pressed. Capturing MCQ and displaying in popup...")
       try {
         if (this.mcqHelper) {
           await this.mcqHelper.captureMCQAndShowAnswer()
@@ -177,6 +177,18 @@ export class ShortcutsHelper {
         }
       } catch (error) {
         console.error("Error in MCQ capture:", error)
+      }
+    })
+
+    // Ctrl + / => toggle popup visibility (show/hide)
+    globalShortcut.register("CommandOrControl+/", async () => {
+      console.log("Ctrl+/ pressed. Toggling MCQ popup...")
+      try {
+        if (this.mcqHelper) {
+          await this.mcqHelper.togglePopup()
+        }
+      } catch (error) {
+        console.error("Error toggling popup:", error)
       }
     })
     

@@ -1,4 +1,5 @@
 import SubscribedApp from "./_pages/SubscribedApp"
+import { CreateRoom } from "./_pages/CreateRoom"
 import { UpdateNotification } from "./components/UpdateNotification"
 import {
   QueryClient,
@@ -87,7 +88,14 @@ function App() {
   useEffect(() => {
     const checkApiKey = async () => {
       try {
-        const hasKey = await window.electronAPI.checkApiKey()
+        const api = (window as any).electronAPI
+        if (!api?.checkApiKey) {
+          console.warn("electronAPI unavailable; skipping API key check")
+          setHasApiKey(false)
+          return
+        }
+
+        const hasKey = await api.checkApiKey()
         setHasApiKey(hasKey)
         
         // If no API key is found, show the settings dialog after a short delay
@@ -137,14 +145,17 @@ function App() {
 
   // Listen for settings dialog open requests
   useEffect(() => {
-    const unsubscribeSettings = window.electronAPI.onShowSettings(() => {
-      console.log("Show settings dialog requested");
-      setIsSettingsOpen(true);
-    });
-    
+    const api = (window as any).electronAPI
+    if (!api?.onShowSettings) return
+
+    const unsubscribeSettings = api.onShowSettings(() => {
+      console.log("Show settings dialog requested")
+      setIsSettingsOpen(true)
+    })
+
     return () => {
-      unsubscribeSettings();
-    };
+      unsubscribeSettings?.()
+    }
   }, []);
 
   // Initialize basic app state
@@ -156,12 +167,18 @@ function App() {
         updateCredits()
         
         // Load config including language and model settings
-        const config = await window.electronAPI.getConfig()
-        
-        // Load language preference
-        if (config && config.language) {
-          updateLanguage(config.language)
+        const api = (window as any).electronAPI
+        if (api?.getConfig) {
+          const config = await api.getConfig()
+          
+          // Load language preference
+          if (config && (config as any).language) {
+            updateLanguage((config as any).language)
+          } else {
+            updateLanguage("python")
+          }
         } else {
+          console.warn("electronAPI.getConfig unavailable; using defaults")
           updateLanguage("python")
         }
         
@@ -190,20 +207,19 @@ function App() {
     }
 
     // Setup API key invalid listener
-    window.electronAPI.onApiKeyInvalid(onApiKeyInvalid)
+    const api = (window as any).electronAPI
+    api?.onApiKeyInvalid?.(onApiKeyInvalid)
 
     // Define a no-op handler for solution success
-    const unsubscribeSolutionSuccess = window.electronAPI.onSolutionSuccess(
-      () => {
-        console.log("Solution success - no credits deducted in this version")
-        // No credit deduction in this version
-      }
-    )
+    const unsubscribeSolutionSuccess = api?.onSolutionSuccess?.(() => {
+      console.log("Solution success - no credits deducted in this version")
+      // No credit deduction in this version
+    })
 
     // Cleanup function
     return () => {
-      window.electronAPI.removeListener("API_KEY_INVALID", onApiKeyInvalid)
-      unsubscribeSolutionSuccess()
+      api?.removeListener?.("API_KEY_INVALID", onApiKeyInvalid)
+      unsubscribeSolutionSuccess?.()
       window.__IS_INITIALIZED__ = false
       setIsInitialized(false)
     }
@@ -235,6 +251,12 @@ function App() {
       showToast("Error", "Failed to save API key", "error")
     }
   }, [showToast])
+
+  // lightweight routing without redesign
+  const path = window.location.pathname
+  if (path === "/createroom") {
+    return <CreateRoom />
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

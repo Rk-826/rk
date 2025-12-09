@@ -4,6 +4,7 @@ import { ipcMain, shell, dialog } from "electron"
 import { randomBytes } from "crypto"
 import { IIpcHandlerDeps } from "./main"
 import { configHelper } from "./ConfigHelper"
+import { roomService } from "./RoomService"
 
 export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   console.log("Initializing IPC handlers")
@@ -33,6 +34,22 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     // Then test the API key with OpenAI
     const result = await configHelper.testApiKey(apiKey);
     return result;
+  })
+
+  // Room management
+  ipcMain.handle("room-create", () => {
+    const code = roomService.createRoom()
+    return { code }
+  })
+
+  ipcMain.handle("room-validate", (_event, code: string) => {
+    const valid = roomService.validateRoom(code)
+    return { valid }
+  })
+
+  ipcMain.handle("room-server-info", () => {
+    const port = roomService.start()
+    return { port }
   })
 
   // Credits handlers
