@@ -5,7 +5,34 @@ import { Card } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 
 // Simple HTTP+WS room server location (use ngrok in front if remote)
-const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || "http://localhost:4000"
+const ROOM_SERVER = (
+  import.meta.env.VITE_ROOM_SERVER_URL ||
+  "https://prepueblo-lenna-retrally.ngrok-free.dev" ||
+  "http://localhost:4000"
+).replace(/\/+$/, "")
+
+const fetchJson = async (url: string, init?: RequestInit) => {
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "ngrok-skip-browser-warning": "true",
+      ...(init?.headers || {})
+    },
+    cache: "no-store",
+    ...init
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for ${url}: ${text.slice(0, 160)}`)
+  }
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON from ${url} (status ${res.status}): ${text.slice(0, 160)}`
+    )
+  }
+}
 
 export function CreateRoom() {
   const [code, setCode] = useState<string>("")
@@ -22,12 +49,10 @@ export function CreateRoom() {
     setLoading(true)
     setError("")
     try {
-      const res = await fetch(`${ROOM_SERVER}/api/rooms/create`, {
+      const data = await fetchJson(`${ROOM_SERVER}/api/rooms/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" }
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
       setCode(data.code)
     } catch (err) {
       console.error("createRoom failed:", err)
@@ -53,9 +78,7 @@ export function CreateRoom() {
     }
     setIsJoining(true)
     try {
-      const res = await fetch(`${ROOM_SERVER}/api/rooms/${code}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const validation = await res.json()
+      const validation = await fetchJson(`${ROOM_SERVER}/api/rooms/${code}`)
       if (!validation.valid) {
         setJoinError("Invalid or inactive code.")
         return

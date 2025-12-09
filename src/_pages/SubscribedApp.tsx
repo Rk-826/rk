@@ -7,7 +7,32 @@ import { useToast } from "../contexts/toast"
 import { v4 as uuidv4 } from "uuid"
 
 // Simple HTTP+WS room server location (use ngrok URL if remote)
-const ROOM_SERVER = import.meta.env.VITE_ROOM_SERVER_URL || "http://localhost:4000"
+const ROOM_SERVER = (
+  import.meta.env.VITE_ROOM_SERVER_URL ||
+  "https://prepueblo-lenna-retrally.ngrok-free.dev" ||
+  "http://localhost:4000"
+).replace(/\/+$/, "")
+
+const fetchJson = async (url: string) => {
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "ngrok-skip-browser-warning": "true"
+    },
+    cache: "no-store"
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for ${url}: ${text.slice(0, 160)}`)
+  }
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON from ${url} (status ${res.status}): ${text.slice(0, 160)}`
+    )
+  }
+}
 
 interface SubscribedAppProps {
   credits: number
@@ -53,9 +78,7 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
     }
     setIsJoining(true)
     try {
-      const res = await fetch(`${ROOM_SERVER}/api/rooms/${joinCode}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const validation = await res.json()
+      const validation = await fetchJson(`${ROOM_SERVER}/api/rooms/${joinCode}`)
       if (!validation.valid) {
         setJoinError("Invalid or inactive code.")
         return

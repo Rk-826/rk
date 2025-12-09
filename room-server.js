@@ -14,7 +14,7 @@ function json(res, status, body) {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Headers": "Content-Type, Accept, ngrok-skip-browser-warning"
   })
   res.end(JSON.stringify(body))
 }
@@ -126,10 +126,18 @@ server.on("upgrade", (request, socket, head) => {
   }
   const code = url.searchParams.get("code")
   const userId = url.searchParams.get("userId") || randomUUID()
+  console.log("WS upgrade", {
+    host: request.headers.host,
+    origin: request.headers.origin,
+    code,
+    userId: userId ? userId.slice(0, 8) : null
+  })
   if (!code || !validate(code)) {
     socket.destroy()
     return
   }
+  // Reflect CORS-like permissive headers during upgrade for proxies that surface them
+  request.headers["access-control-allow-origin"] = "*"
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit("connection", ws, request, code, userId)
   })
