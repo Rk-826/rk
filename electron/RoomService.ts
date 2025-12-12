@@ -31,7 +31,7 @@ export class RoomService {
   private userRoom: Map<string, RoomCode> = new Map()
   private wss: WebSocketServer | null = null
   private cleanupInterval: NodeJS.Timeout | null = null
-  private readonly ttlMs = 10 * 60 * 1000 // 10 minutes inactivity
+  // Removed TTL - rooms never expire, only cleared when service stops
   private port: number | null = null
 
   public start(): number {
@@ -43,8 +43,7 @@ export class RoomService {
     const addr = this.wss.address() as AddressInfo
     this.port = addr.port
 
-    // periodic cleanup
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60 * 1000)
+    // Room cleanup removed - rooms persist until service stops
 
     return this.port
   }
@@ -52,6 +51,7 @@ export class RoomService {
   public stop(): void {
     if (this.cleanupInterval) clearInterval(this.cleanupInterval)
     this.cleanupInterval = null
+    // Close all clients and clear rooms when service stops
     this.rooms.forEach((room) => {
       room.clients.forEach((c) => c.close())
     })
@@ -68,21 +68,19 @@ export class RoomService {
 
   public createRoom(): RoomCode {
     this.start()
-    let code: RoomCode
-    do {
-      code = Math.floor(Math.random() * 10000)
-        .toString()
-        .padStart(4, "0")
-    } while (this.rooms.has(code))
-
-    const now = Date.now()
-    this.rooms.set(code, {
-      code,
-      createdAt: now,
-      lastActive: now,
-      clients: new Set(),
-      status: "active"
-    })
+    // Always use code "0000" for the 2-user setup
+    const code: RoomCode = "0000"
+    
+    if (!this.rooms.has(code)) {
+      const now = Date.now()
+      this.rooms.set(code, {
+        code,
+        createdAt: now,
+        lastActive: now,
+        clients: new Set(),
+        status: "active"
+      })
+    }
     return code
   }
 
@@ -172,19 +170,10 @@ export class RoomService {
     }
   }
 
-  private cleanup() {
-    const now = Date.now()
-    const stale: RoomCode[] = []
-    this.rooms.forEach((room, code) => {
-      if (room.clients.size === 0 && now - room.lastActive > this.ttlMs) {
-        stale.push(code)
-      }
-    })
-    stale.forEach((code) => {
-      this.rooms.delete(code)
-    })
-  }
+  // Cleanup method removed - rooms never expire, only cleared when service stops
 }
 
 export const roomService = new RoomService()
+
+
 

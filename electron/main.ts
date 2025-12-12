@@ -30,6 +30,7 @@ const state = {
   screenshotHelper: null as ScreenshotHelper | null,
   shortcutsHelper: null as ShortcutsHelper | null,
   processingHelper: null as ProcessingHelper | null,
+  mcqHelper: null as any | null, // MCQHelper instance
 
   // View and state management
   view: "queue" as "queue" | "solutions" | "debug",
@@ -573,6 +574,10 @@ async function initializeApp() {
     })
     await createWindow()
     state.shortcutsHelper?.registerGlobalShortcuts()
+    // Store MCQHelper reference in state for access from IPC handlers
+    if (state.shortcutsHelper?.mcqHelper) {
+      state.mcqHelper = state.shortcutsHelper.mcqHelper
+    }
 
     // Initialize auto-updater regardless of environment
     initAutoUpdater()

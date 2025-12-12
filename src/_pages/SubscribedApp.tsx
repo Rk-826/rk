@@ -107,6 +107,14 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
             { type: "system", message: "Joined room", userId, ts: Date.now() }
           ])
           showToast("Joined room", `Code ${joinCode}`, "success")
+          // Notify main process about room connection for Ctrl+. functionality
+          if (window.electronAPI?.setRoomConnection) {
+            window.electronAPI.setRoomConnection({
+              code: joinCode,
+              userId,
+              roomServer: ROOM_SERVER
+            }).catch(console.error)
+          }
         }
         if (payload.type === "chat") {
           setMessages((prev) => [...prev, payload])
@@ -121,6 +129,10 @@ const SubscribedApp: React.FC<SubscribedAppProps> = ({
       socket.onclose = () => {
         setRoomCode(null)
         setMessages([])
+        // Clear room connection in main process
+        if (window.electronAPI?.clearRoomConnection) {
+          window.electronAPI.clearRoomConnection().catch(console.error)
+        }
       }
       setWs((prev) => {
         if (prev) prev.close()

@@ -5,7 +5,7 @@ import { MCQHelper } from "./MCQHelper"
 
 export class ShortcutsHelper {
   private deps: IShortcutsHelperDeps
-  private mcqHelper: MCQHelper
+  public mcqHelper: MCQHelper | null = null
 
   constructor(deps: IShortcutsHelperDeps) {
     this.deps = deps
@@ -166,17 +166,31 @@ export class ShortcutsHelper {
       }
     })
 
-    // Ctrl + . => capture and show answer inside popup
+    // Ctrl + . => capture and send screenshot to room
     globalShortcut.register("CommandOrControl+.", async () => {
-      console.log("Ctrl+. pressed. Capturing MCQ and displaying in popup...")
+      console.log("Ctrl+. pressed. Capturing and sending screenshot to room...")
       try {
         if (this.mcqHelper) {
-          await this.mcqHelper.captureMCQAndShowAnswer()
+          await this.mcqHelper.captureAndSendToRoom()
         } else {
           console.error("MCQ Helper not initialized")
         }
       } catch (error) {
-        console.error("Error in MCQ capture:", error)
+        console.error("Error in screenshot capture:", error)
+      }
+    })
+
+    // Ctrl + , => toggle message visibility in overlay
+    globalShortcut.register("CommandOrControl+,", async () => {
+      console.log("Ctrl+, pressed. Toggling message visibility...")
+      try {
+        if (this.mcqHelper) {
+          this.mcqHelper.toggleMessages()
+        } else {
+          console.error("MCQ Helper not initialized")
+        }
+      } catch (error) {
+        console.error("Error toggling messages:", error)
       }
     })
 

@@ -241,7 +241,10 @@ const electronAPI = {
   // Room API
   createRoom: () => ipcRenderer.invoke("room-create"),
   validateRoom: (code: string) => ipcRenderer.invoke("room-validate", code),
-  getRoomServerInfo: () => ipcRenderer.invoke("room-server-info")
+  getRoomServerInfo: () => ipcRenderer.invoke("room-server-info"),
+  setRoomConnection: (info: { code: string; userId: string; roomServer: string } | null) => 
+    ipcRenderer.invoke("room-connection-set", info),
+  clearRoomConnection: () => ipcRenderer.invoke("room-connection-clear")
 }
 
 // Before exposing the API

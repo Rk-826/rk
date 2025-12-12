@@ -2,7 +2,7 @@
 
 import { ipcMain, shell, dialog } from "electron"
 import { randomBytes } from "crypto"
-import { IIpcHandlerDeps } from "./main"
+import { IIpcHandlerDeps, state } from "./main"
 import { configHelper } from "./ConfigHelper"
 import { roomService } from "./RoomService"
 
@@ -50,6 +50,28 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
   ipcMain.handle("room-server-info", () => {
     const port = roomService.start()
     return { port }
+  })
+
+  // Room connection state for main process (used by Ctrl+.)
+  ipcMain.handle("room-connection-set", (_event, info: { code: string; userId: string; roomServer: string }) => {
+    console.log("Room connection set:", info)
+    // Update MCQHelper with room connection
+    if (state.mcqHelper) {
+      state.mcqHelper.setRoomConnection(info)
+    }
+  })
+
+  ipcMain.handle("room-connection-clear", () => {
+    console.log("Room connection cleared")
+    // Clear room connection in MCQHelper
+    if (state.mcqHelper) {
+      state.mcqHelper.setRoomConnection(null)
+    }
+  })
+
+  ipcMain.handle("room-connection-get", () => {
+    // Return current connection if needed
+    return state.mcqHelper?.currentRoomInfo || null
   })
 
   // Credits handlers

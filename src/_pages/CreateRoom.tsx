@@ -101,6 +101,14 @@ export function CreateRoom() {
             ...prev,
             { type: "system", message: "Joined room", userId, ts: Date.now() }
           ])
+          // Notify main process about room connection for Ctrl+. functionality
+          if (window.electronAPI?.setRoomConnection) {
+            window.electronAPI.setRoomConnection({
+              code,
+              userId,
+              roomServer: ROOM_SERVER
+            }).catch(console.error)
+          }
         }
         if (payload.type === "history" && Array.isArray(payload.messages)) {
           setMessages(payload.messages)
@@ -114,6 +122,10 @@ export function CreateRoom() {
       }
       socket.onclose = () => {
         setJoinError("Connection closed.")
+        // Clear room connection in main process
+        if (window.electronAPI?.clearRoomConnection) {
+          window.electronAPI.clearRoomConnection().catch(console.error)
+        }
       }
       setWs((prev) => {
         if (prev) prev.close()

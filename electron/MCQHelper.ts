@@ -1,13 +1,15 @@
-// MCQHelper.ts - Handles MCQ detection and answer overlay
+// MCQHelper.ts - Handles room chat overlay (formerly MCQ detection)
 import { BrowserWindow, screen } from "electron"
 import { ScreenshotHelper } from "./ScreenshotHelper"
-import { configHelper } from "./ConfigHelper"
-import { OpenAI } from "openai"
+import WebSocket from "ws"
 
 export class MCQHelper {
   private overlayWindow: BrowserWindow | null = null;
   private isOverlayHidden: boolean = false;
   private screenshotHelper: ScreenshotHelper;
+  private roomWs: WebSocket | null = null;
+  public currentRoomInfo: { code: string; userId: string; roomServer: string } | null = null;
+  private messagesEnabled: boolean = true; // Toggle for showing messages in overlay
 
   constructor(screenshotHelper: ScreenshotHelper) {
     this.screenshotHelper = screenshotHelper;
@@ -26,8 +28,8 @@ export class MCQHelper {
     const overlayY = screenHeight - 70;
 
     this.overlayWindow = new BrowserWindow({
-      width: 140,
-      height: 56,
+      width: 420,
+      height: 80,
       x: overlayX,
       y: overlayY,
       frame: false,
@@ -52,13 +54,13 @@ export class MCQHelper {
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
       html,body{margin:0;padding:0;background:transparent;height:100%;}
       .wrap{display:flex;align-items:center;justify-content:center;height:100%}
-      .answer{background:rgba(0,0,0,.75);color:#00ff88;font:600 16px/1.2 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,.2);min-width:64px;text-align:center}
+      .message{background:rgba(0,0,0,.85);color:#00ff88;font:600 14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:6px;border:1px solid rgba(0,255,136,.3);max-width:400px;word-wrap:break-word;text-align:left}
     </style></head><body>
-      <div class="wrap"><div id="answer" class="answer">--</div></div>
+      <div class="wrap"><div id="message" class="message">--</div></div>
       <script>
-        window.__setAnswer = (text) => {
-          const el = document.getElementById('answer');
-          if (el) el.textContent = (text || '--').toLowerCase();
+        window.__setMessage = (text) => {
+          const el = document.getElementById('message');
+          if (el) el.textContent = (text || '--');
         }
       </script>
     </body></html>`;
@@ -106,38 +108,146 @@ export class MCQHelper {
     this.isOverlayHidden = true;
   }
 
-  /** Update answer inside popup (Ctrl+.) */
-  public async showAnswerInPopup(answer: string): Promise<void> {
+  /** Update message inside popup */
+  public async showMessageInPopup(message: string): Promise<void> {
     await this.ensurePopup();
     if (!this.overlayWindow) return;
 
     if (this.isOverlayHidden) await this.showPopup();
-    const text = (answer || "").toLowerCase();
-    await this.overlayWindow.webContents.executeJavaScript(`window.__setAnswer(${JSON.stringify(text)})`);
+    await this.overlayWindow.webContents.executeJavaScript(`window.__setMessage(${JSON.stringify(message)})`);
 
-    // Auto-hide quickly like the screenshot HUD (brief on-screen flash)
+    // Auto-hide after showing message
     clearTimeout((this as any).__autoHideTimer);
     (this as any).__autoHideTimer = setTimeout(() => {
       this.hidePopup().catch(() => {});
-    }, 900);
+    }, 3000); // Show longer for chat messages
   }
 
-  /** Update silently without showing (like Ctrl+B behaviour) */
-  private async setAnswerSilently(answer: string): Promise<void> {
-    await this.ensurePopup();
-    if (!this.overlayWindow) return;
-    // enforce hidden state
-    await this.hidePopup();
-    const text = (answer || "").toLowerCase();
-    await this.overlayWindow.webContents.executeJavaScript(`window.__setAnswer(${JSON.stringify(text)})`);
+  /** Set room connection info and connect WebSocket */
+  public setRoomConnection(info: { code: string; userId: string; roomServer: string } | null): void {
+    // Disconnect existing connection
+    if (this.roomWs) {
+      this.roomWs.close();
+      this.roomWs = null;
+    }
+
+    this.currentRoomInfo = info;
+
+    if (!info) {
+      return;
+    }
+
+    // Connect to room WebSocket
+    try {
+      const wsBase = new URL(info.roomServer);
+      wsBase.protocol = wsBase.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${wsBase.origin}/ws?code=${info.code}&userId=${info.userId}`;
+      
+      console.log("MCQHelper connecting to room:", wsUrl);
+      const ws = new WebSocket(wsUrl);
+
+      ws.on("open", () => {
+        console.log("MCQHelper WebSocket opened, joining room");
+        try {
+          ws.send(JSON.stringify({ type: "join", code: info.code, userId: info.userId }));
+          console.log("Join message sent to room");
+        } catch (e) {
+          console.error("Error sending join message:", e);
+        }
+      });
+
+      ws.on("message", (data) => {
+        try {
+          const payload = JSON.parse(data.toString());
+          console.log("MCQHelper received message:", payload.type);
+          if (payload.type === "chat" && payload.message && this.messagesEnabled) {
+            // Show chat message in overlay only if messages are enabled
+            this.showMessageInPopup(payload.message).catch(console.error);
+          } else if (payload.type === "system" && payload.message && this.messagesEnabled) {
+            // Show system messages too, only if messages are enabled
+            this.showMessageInPopup(payload.message).catch(console.error);
+          } else if (payload.type === "joined") {
+            console.log("MCQHelper successfully joined room:", payload.code);
+          } else if (payload.type === "error") {
+            console.error("MCQHelper received error:", payload.message);
+          }
+        } catch (e) {
+          console.error("Error parsing room message:", e);
+        }
+      });
+
+      ws.on("error", (error) => {
+        console.error("Room WebSocket error:", error);
+        console.error("Failed to connect to:", wsUrl);
+      });
+
+      ws.on("close", (code, reason) => {
+        console.log(`Room WebSocket closed (code: ${code}, reason: ${reason?.toString() || 'none'})`);
+        if (this.roomWs === ws) {
+          this.roomWs = null;
+        }
+        // Don't clear currentRoomInfo on close - we might want to reconnect
+      });
+
+      this.roomWs = ws;
+      console.log("WebSocket instance created, waiting for connection...");
+    } catch (error) {
+      console.error("Error creating WebSocket connection:", error);
+      console.error("Room info was:", info);
+    }
+  }
+
+  /** Send screenshot to room */
+  public async sendScreenshotToRoom(imageData: string): Promise<void> {
+    if (!this.currentRoomInfo) {
+      console.log("Cannot send screenshot: no room info");
+      return;
+    }
+    
+    if (!this.roomWs) {
+      console.log("Cannot send screenshot: no WebSocket connection, attempting to reconnect...");
+      // Try to reconnect
+      this.setRoomConnection(this.currentRoomInfo);
+      // Wait a bit for connection
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    if (!this.roomWs || this.roomWs.readyState !== WebSocket.OPEN) {
+      console.log(`Cannot send screenshot: WebSocket not open (state: ${this.roomWs?.readyState || 'null'})`);
+      console.log("Current room info:", this.currentRoomInfo);
+      return;
+    }
+
+    try {
+      this.roomWs.send(JSON.stringify({
+        type: "image",
+        code: this.currentRoomInfo.code,
+        userId: this.currentRoomInfo.userId,
+        image: imageData,
+        ts: Date.now()
+      }));
+      console.log("Screenshot sent to room");
+    } catch (error) {
+      console.error("Error sending screenshot to room:", error);
+    }
   }
 
   /**
-   * Capture screen and analyze MCQ, then show answer overlay
+   * Toggle message visibility in overlay
    */
-  public async captureMCQAndShowAnswer(): Promise<void> {
+  public toggleMessages(): void {
+    this.messagesEnabled = !this.messagesEnabled;
+    console.log(`MCQHelper: Messages ${this.messagesEnabled ? 'enabled' : 'disabled'}`);
+    // Show status briefly
+    this.showMessageInPopup(`Messages ${this.messagesEnabled ? 'ON' : 'OFF'}`).catch(console.error);
+  }
+
+  /**
+   * Capture screen and send to room (Ctrl+.)
+   */
+  public async captureAndSendToRoom(): Promise<void> {
     try {
-      console.log("Starting MCQ capture and analysis...");
+      console.log("Starting screenshot capture for room...");
       
       const mainWindow = this.getMainWindow();
       let wasMainWindowVisible = false;
@@ -155,128 +265,23 @@ export class MCQHelper {
       const screenshotPath = await this.screenshotHelper.takeScreenshot(() => {}, () => {});
       console.log("Screenshot taken:", screenshotPath);
 
-      let answer = await this.analyzeMCQ(screenshotPath);
+      // Convert screenshot to base64
+      const fs = require('fs');
+      const screenshotData = fs.readFileSync(screenshotPath).toString('base64');
+      const dataUrl = `data:image/png;base64,${screenshotData}`;
 
-      // ✅ If no answer or error, show "N"
-      if (!answer) {
-        answer = "N";
-      }
-
-      // Update the popup silently (mimic Ctrl+B behavior: compute while hidden)
-      await this.setAnswerSilently(answer);
+      // Send to room
+      await this.sendScreenshotToRoom(dataUrl);
 
       if (wasMainWindowVisible && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
       }
 
     } catch (error) {
-      console.error("Error in MCQ capture and analysis:", error);
-      // ✅ Show "N" in case of any error
-      await this.showAnswerOverlay("N");
+      console.error("Error in screenshot capture and send:", error);
     }
   }
 
-  /**
-   * Analyze screenshot for MCQ and return the answer
-   */
-  private async analyzeMCQ(screenshotPath: string): Promise<string | null> {
-    try {
-      const config = configHelper.loadConfig();
-      if (!config.apiKey) {
-        console.error("No API key configured");
-        return null;
-      }
-
-      // Initialize OpenRouter client
-      const openai = new OpenAI({
-        baseURL: 'https://openrouter.ai/api/v1',
-        apiKey: config.apiKey,
-        defaultHeaders: {
-          'HTTP-Referer': 'https://your-app.com',
-          'X-Title': 'Coding Assistant App',
-        }
-      });
-
-      const fs = require('fs');
-      const screenshotData = fs.readFileSync(screenshotPath).toString('base64');
-
-      const prompt = `
-You are an expert at analyzing multiple choice questions (MCQs).
-
-From the screenshot:
-1. Identify ONLY the very first complete MCQ that appears from top to bottom in the image.
-2. Extract the full MCQ question text and all available options exactly as seen.
-3. Determine the correct answer.
-4. Respond in the format:
-QUESTION: <question text>
-OPTIONS:
-a) <option text>
-b) <option text>
-c) <option text>
-d) <option text>
-ANSWER: <answer letter/number>
-
-If no MCQ is found, respond only with "NO_MCQ".
-Do NOT include more than one MCQ in your response.
-`;
-
-      const response = await openai.chat.completions.create({
-        model: "openai/gpt-4o",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: prompt },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/png;base64,${screenshotData}`
-                }
-              }
-            ]
-          }
-        ],
-        max_tokens: 200,
-        temperature: 0.1
-      });
-
-      const responseText = response.choices[0].message.content?.trim() || "";
-      console.log("OpenRouter full response:\n", responseText);
-
-      if (responseText === "NO_MCQ") {
-        return null;
-      }
-
-      // Extract the answer letter
-      const answerMatch = responseText.match(/ANSWER:\s*([A-Da-d1-4])/);
-      if (answerMatch) {
-        const answerLetter = answerMatch[1].toLowerCase();
-        
-        // Extract the option text for the correct answer
-        const optionPattern = new RegExp(`${answerLetter}\\)\\s*([^\\n]+)`, 'i');
-        const optionMatch = responseText.match(optionPattern);
-        
-        if (optionMatch) {
-          const optionText = optionMatch[1].trim();
-          // Return the answer letter and first 2-3 letters of the option
-          const shortText = optionText.substring(0, 3).toLowerCase();
-          return `${answerLetter}) ${shortText}`;
-        }
-        
-        return answerLetter;
-      }
-      
-      return null;
-
-    } catch (error) {
-      console.error("Error analyzing MCQ:", error);
-      console.error("OpenRouter API error:", error);
-      return null;
-    }
-  }
-
-  // Deprecated overlay path retained for compatibility (not used)
-  private async showAnswerOverlay(_answer: string): Promise<void> {}
 
   /**
    * Write answer to a temporary file for easy access
@@ -324,5 +329,10 @@ Do NOT include more than one MCQ in your response.
 
   public cleanup(): void {
     this.hideOverlay();
+    if (this.roomWs) {
+      this.roomWs.close();
+      this.roomWs = null;
+    }
+    this.currentRoomInfo = null;
   }
 }

@@ -66,6 +66,8 @@ export interface ElectronAPI {
   createRoom: () => Promise<{ code: string }>
   validateRoom: (code: string) => Promise<{ valid: boolean }>
   getRoomServerInfo: () => Promise<{ port: number }>
+  setRoomConnection: (info: { code: string; userId: string; roomServer: string } | null) => Promise<void>
+  clearRoomConnection: () => Promise<void>
 }
 
 declare global {

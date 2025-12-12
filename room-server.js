@@ -7,7 +7,7 @@ const { randomUUID } = require("crypto")
 
 const PORT = process.env.PORT || 4000
 const rooms = new Map() // code -> { clients: Set<WebSocket>, lastActive: number, messages: any[] }
-const ttlMs = 10 * 60 * 1000 // 10 minutes
+// Removed TTL - rooms never expire, only cleared when server stops
 
 function json(res, status, body) {
   res.writeHead(status, {
@@ -20,27 +20,16 @@ function json(res, status, body) {
 }
 
 function createCode() {
-  let code
-  do {
-    code = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, "0")
-  } while (rooms.has(code))
-  rooms.set(code, { clients: new Set(), lastActive: Date.now(), messages: [] })
+  // Always use code "0000" for the 2-user setup
+  const code = "0000"
+  if (!rooms.has(code)) {
+    rooms.set(code, { clients: new Set(), lastActive: Date.now(), messages: [] })
+  }
   return code
 }
 
 function validate(code) {
   return rooms.has(code)
-}
-
-function cleanup() {
-  const now = Date.now()
-  for (const [code, room] of rooms.entries()) {
-    if (room.clients.size === 0 && now - room.lastActive > ttlMs) {
-      rooms.delete(code)
-    }
-  }
 }
 
 const server = http.createServer((req, res) => {
@@ -67,7 +56,8 @@ wss.on("connection", (ws, request, roomCode, userId) => {
     ws.send(JSON.stringify({ type: "error", message: "Room not found" }))
     return ws.close()
   }
-  if (room.clients.size >= 2) {
+  // Allow up to 10 connections
+  if (room.clients.size >= 10) {
     ws.send(JSON.stringify({ type: "error", message: "Room is full" }))
     return ws.close()
   }
@@ -85,6 +75,11 @@ wss.on("connection", (ws, request, roomCode, userId) => {
   ws.on("message", (data) => {
     try {
       const payload = JSON.parse(data.toString())
+      // Handle join message (allows clients to re-join if needed)
+      if (payload.type === "join") {
+        console.log(`[${roomCode}] Client ${userId.slice(0, 4)} sent join message (already in room)`)
+        return
+      }
       if (payload.type === "chat" && payload.message) {
         room.lastActive = Date.now()
         const msg = {
@@ -155,7 +150,7 @@ server.on("upgrade", (request, socket, head) => {
   })
 })
 
-setInterval(cleanup, 60 * 1000)
+// Room cleanup removed - rooms persist until server shuts down
 
 server.listen(PORT, () => {
   console.log(`Room server running on http://localhost:${PORT}`)
