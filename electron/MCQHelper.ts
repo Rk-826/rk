@@ -248,19 +248,6 @@ export class MCQHelper {
   public async captureAndSendToRoom(): Promise<void> {
     try {
       console.log("Starting screenshot capture for room...");
-      
-      const mainWindow = this.getMainWindow();
-      let wasMainWindowVisible = false;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        wasMainWindowVisible = mainWindow.isVisible();
-        if (wasMainWindowVisible) {
-          mainWindow.hide();
-        }
-      }
-
-      this.hideOverlay();
-
-      await new Promise(resolve => setTimeout(resolve, 500));
 
       const screenshotPath = await this.screenshotHelper.takeScreenshot(() => {}, () => {});
       console.log("Screenshot taken:", screenshotPath);
@@ -272,10 +259,6 @@ export class MCQHelper {
 
       // Send to room
       await this.sendScreenshotToRoom(dataUrl);
-
-      if (wasMainWindowVisible && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-      }
 
     } catch (error) {
       console.error("Error in screenshot capture and send:", error);

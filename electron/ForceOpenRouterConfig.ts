@@ -9,9 +9,9 @@ export function forceOpenRouterConfig(): void {
     const result = configHelper.updateConfig({
       apiKey: "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",
       apiProvider: "openai",
-      extractionModel: "openai/gpt-4o",
-      solutionModel: "openai/gpt-4o",
-      debuggingModel: "openai/gpt-4o"
+      extractionModel: "gemini-2.5-flash",
+      solutionModel: "gemini-2.5-flash",
+      debuggingModel: "gemini-2.5-flash"
     });
     
     console.log("OpenRouter configuration forced successfully:", result);
@@ -36,9 +36,9 @@ export function clearConfigAndUseDefaults(): void {
     configHelper.saveConfig({
       apiKey: "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",
       apiProvider: "openai",
-      extractionModel: "openai/gpt-4o",
-      solutionModel: "openai/gpt-4o",
-      debuggingModel: "openai/gpt-4o",
+      extractionModel: "gemini-2.5-flash",
+      solutionModel: "gemini-2.5-flash",
+      debuggingModel: "gemini-2.5-flash",
       language: "python",
       opacity: 1.0
     });

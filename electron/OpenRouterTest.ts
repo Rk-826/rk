@@ -15,7 +15,7 @@ export async function testOpenRouterAPI(apiKey: string): Promise<{ success: bool
     console.log("Testing OpenRouter API connection...");
     
     const response = await openai.chat.completions.create({
-      model: "openai/gpt-4o",
+      model: "gemini-2.5-flash",
       messages: [
         {
           role: "user",

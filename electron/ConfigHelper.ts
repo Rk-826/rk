@@ -18,11 +18,11 @@ interface Config {
 export class ConfigHelper extends EventEmitter {
   private configPath: string;
   private defaultConfig: Config = {
-    apiKey: "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",
+    apiKey: "AIzaSyAPD0a6V_yrQRR5SPtiWhigVd-USssy54k",
     apiProvider: "openai", // Default to OpenAI (OpenRouter)
-    extractionModel: "openai/gpt-4o", // Default to GPT-4o via OpenRouter
-    solutionModel: "openai/gpt-4o",
-    debuggingModel: "openai/gpt-4o",
+    extractionModel: "gemini-2.5-flash", // Default to GPT-4o via OpenRouter
+    solutionModel: "gemini-2.5-flash",
+    debuggingModel: "gemini-2.5-flash",
     language: "python",
     opacity: 1.0
   };
@@ -171,9 +171,9 @@ export class ConfigHelper extends EventEmitter {
       // If provider is changing, reset models to the default for that provider
       if (updates.apiProvider && updates.apiProvider !== currentConfig.apiProvider) {
         if (updates.apiProvider === "openai") {
-          updates.extractionModel = "openai/gpt-4o";
-          updates.solutionModel = "openai/gpt-4o";
-          updates.debuggingModel = "openai/gpt-4o";
+          updates.extractionModel = "gemini-2.5-flash";
+          updates.solutionModel = "gemini-2.5-flash";
+          updates.debuggingModel = "gemini-2.5-flash";
         } else if (updates.apiProvider === "anthropic") {
           updates.extractionModel = "claude-3-7-sonnet-20250219";
           updates.solutionModel = "claude-3-7-sonnet-20250219";

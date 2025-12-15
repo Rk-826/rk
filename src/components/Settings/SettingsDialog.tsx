@@ -240,9 +240,9 @@ export function SettingsDialog({ open: externalOpen, onOpenChange }: SettingsDia
     
     // Reset models to defaults when changing provider
     if (provider === "openai") {
-      setExtractionModel("openai/gpt-4o");
-      setSolutionModel("openai/gpt-4o");
-      setDebuggingModel("openai/gpt-4o");
+      setExtractionModel("gemini-2.5-flash");
+      setSolutionModel("gemini-2.5-flash");
+      setDebuggingModel("gemini-2.5-flash");
     } else if (provider === "gemini") {
       setExtractionModel("gemini-1.5-pro");
       setSolutionModel("gemini-1.5-pro");
