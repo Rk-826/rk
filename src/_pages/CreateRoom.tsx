@@ -4,11 +4,9 @@ import { Button } from "../components/ui/button"
 import { Card } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 
-// Simple HTTP+WS room server location (use ngrok in front if remote)
+// Simple HTTP+WS room server location (deployed on Render)
 const ROOM_SERVER = (
-  import.meta.env.VITE_ROOM_SERVER_URL ||
-  "https://prepueblo-lenna-retrally.ngrok-free.dev" ||
-  "http://localhost:4000"
+  "https://rk-zj7q.onrender.com"
 ).replace(/\/+$/, "")
 
 const fetchJson = async (url: string, init?: RequestInit) => {

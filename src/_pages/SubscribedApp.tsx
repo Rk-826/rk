@@ -6,11 +6,9 @@ import Solutions from "../_pages/Solutions"
 import { useToast } from "../contexts/toast"
 import { v4 as uuidv4 } from "uuid"
 
-// Simple HTTP+WS room server location (use ngrok URL if remote)
+// Simple HTTP+WS room server location (deployed on Render)
 const ROOM_SERVER = (
-  import.meta.env.VITE_ROOM_SERVER_URL ||
-  "https://prepueblo-lenna-retrally.ngrok-free.dev" ||
-  "http://localhost:4000"
+  "https://rk-zj7q.onrender.com"
 ).replace(/\/+$/, "")
 
 const fetchJson = async (url: string) => {
