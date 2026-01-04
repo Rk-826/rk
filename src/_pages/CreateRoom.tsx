@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { v4 as uuidv4 } from "uuid"
 import { Button } from "../components/ui/button"
 import { Card } from "../components/ui/card"
@@ -42,6 +42,12 @@ export function CreateRoom() {
   const [isJoining, setIsJoining] = useState(false)
   const [userId] = useState(() => uuidv4())
   const [pendingMessage, setPendingMessage] = useState("")
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   const generate = async () => {
     setLoading(true)
@@ -200,6 +206,7 @@ export function CreateRoom() {
                       : m.message}
                   </div>
                 ))}
+                <div ref={messagesEndRef} />
               </div>
               <div className="flex gap-2">
                 <textarea

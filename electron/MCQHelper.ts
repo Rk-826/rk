@@ -54,7 +54,7 @@ export class MCQHelper {
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
       html,body{margin:0;padding:0;background:transparent;height:100%;}
       .wrap{display:flex;align-items:center;justify-content:center;height:100%}
-      .message{background:rgba(0,0,0,.85);color:#00ff88;font:600 14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:6px;border:1px solid rgba(0,255,136,.3);max-width:400px;word-wrap:break-word;text-align:left}
+      .message{ background:#ffffff;color:#000000;font:600 14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:6px;border:1px solid rgba(0,255,136,.3);max-width:400px;word-wrap:break-word;text-align:left}
     </style></head><body>
       <div class="wrap"><div id="message" class="message">--</div></div>
       <script>
