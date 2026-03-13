@@ -166,9 +166,9 @@ export class ShortcutsHelper {
       }
     })
 
-    // Ctrl + . => capture and send screenshot to room
-    globalShortcut.register("CommandOrControl+.", async () => {
-      console.log("Ctrl+. pressed. Capturing and sending screenshot to room...")
+    // Alt + Z => capture and send screenshot to room
+    globalShortcut.register("A+Z", async () => {
+      console.log("Alt+Z pressed. Capturing and sending screenshot to room...")
       try {
         if (this.mcqHelper) {
           await this.mcqHelper.captureAndSendToRoom()

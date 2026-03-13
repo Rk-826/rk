@@ -243,7 +243,7 @@ export class MCQHelper {
   }
 
   /**
-   * Capture screen and send to room (Ctrl+.)
+   * Capture screen and send to room (Alt+Z)
    */
   public async captureAndSendToRoom(): Promise<void> {
     try {

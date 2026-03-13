@@ -52,7 +52,7 @@ export function initializeIpcHandlers(deps: IIpcHandlerDeps): void {
     return { port }
   })
 
-  // Room connection state for main process (used by Ctrl+.)
+  // Room connection state for main process (used by Alt+Z)
   ipcMain.handle("room-connection-set", (_event, info: { code: string; userId: string; roomServer: string }) => {
     console.log("Room connection set:", info)
     // Update MCQHelper with room connection

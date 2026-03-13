@@ -105,7 +105,7 @@ export function CreateRoom() {
             ...prev,
             { type: "system", message: "Joined room", userId, ts: Date.now() }
           ])
-          // Notify main process about room connection for Ctrl+. functionality
+          // Notify main process about room connection for Alt+Z functionality
           if (window.electronAPI?.setRoomConnection) {
             window.electronAPI.setRoomConnection({
               code,
